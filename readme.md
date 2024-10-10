@@ -65,8 +65,8 @@ Thanks for the great libs:
 - Weights & Bias: https://wandb.ai/site  (for logging)
 
 ## Others
-The name `wsabl.py` is a short for `Weakly Supervised Abductive Learning`, which is a previous and initial naming way of A3BL.
-
+The name `wsabl` is a short for `Weakly Supervised Abductive Learning`, which is a previous and initial naming way of A3BL.
+Any question or suggestion, please contact me: `alkane0050@gmail.com`(prefered).
 
 ## Licecense
 This project is licensed under the terms of the MIT license.
