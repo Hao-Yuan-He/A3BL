@@ -1,0 +1,10 @@
+numpy
+pyswip==0.2.9
+torch
+torchvision
+torchaudio
+zoopt
+tqdm
+wandb
+termcolor
+scikit-learn
