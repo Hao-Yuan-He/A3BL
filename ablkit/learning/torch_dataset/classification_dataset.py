@@ -32,7 +32,7 @@ class ClassificationDataset(Dataset):
             raise ValueError("Length of X and Y must be equal.")
 
         self.X = X
-        self.Y = torch.LongTensor(Y)
+        self.Y = torch.LongTensor(Y) if isinstance(Y[0], int) else Y
         self.transform = transform
 
     def __len__(self) -> int:

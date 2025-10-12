@@ -91,6 +91,26 @@ def data_examples_add():
 
 
 @pytest.fixture
+def data_examples_add2():
+    # favor 1 in first one
+    prob1 = [
+        [0, 0.99, 0, 0, 0, 0, 0, 0.01, 0, 0],
+        [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+    ]
+    # favor 7 in first one
+    prob2 = [
+        [0, 0.01, 0, 0, 0, 0, 0, 0.99, 0, 0],
+        [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+    ]
+
+    data_examples_add = ListData()
+    data_examples_add.X = None
+    data_examples_add.pred_pseudo_label = [[1, 1], [1, 1], [1, 1], [1, 1]]
+    data_examples_add.pred_prob = [prob1, prob2, prob1, prob2]
+    data_examples_add.Y = [8, 9, 17, 10]
+    return data_examples_add
+
+@pytest.fixture
 def data_examples_hwf():
     data_examples_hwf = ListData()
     data_examples_hwf.X = None

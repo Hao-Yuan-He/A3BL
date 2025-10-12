@@ -1,8 +1,9 @@
 import numpy as np
 import platform
 import pytest
+import pdb 
 
-from ablkit.reasoning import PrologKB, Reasoner
+from ablkit.reasoning import PrologKB, Reasoner, A3BLReasoner
 
 
 class TestKBBase(object):
@@ -272,3 +273,8 @@ class TestBatchAbduce(object):
             ["8", "times", "8"],
             ["5", "-", "8", "div", "8"],
         ]
+
+    def test_a3bl_abduce_add(self, kb_add, data_examples_add2):
+        reasoner1 = A3BLReasoner(kb_add, "confidence", topK=4)
+        breakpoint()
+        res = reasoner1.batch_abduce(data_examples_add2)
