@@ -40,10 +40,16 @@ class AddGroundKB(CachedKB):
     def logic_forward(self, nums):
         nums1, nums2 = split_list(nums)
         return digits_to_number(nums1) + digits_to_number(nums2)
+    
+    
+MODEL = {"abl": ABLModel, "a3bl": A3BLModel}
+BRIDGE = {"abl": SimpleBridge, "a3bl": A3BLBridge}
+REASONER = {"abl": Reasoner, "a3bl": A3BLReasoner}
 
 
 def main():
     parser = argparse.ArgumentParser(description="MNIST Addition example")
+    parser.add_argument("--method", type=str, default="abl")
     parser.add_argument("--dataset", type=str, default="MNIST")
     parser.add_argument("--digit_size", type=int, default=1)
     parser.add_argument("--no-cuda", action="store_true", default=False, help="disables CUDA training")
@@ -55,15 +61,10 @@ def main():
     parser.add_argument("--segment_size", type=int, default=0.01, help="segment size (default : 0.01)")
     parser.add_argument("--save_interval", type=int, default=1, help="save interval (default : 1)")
     parser.add_argument("--max-revision", type=int, default=-1, help="maximum revision in reasoner (default : -1)")
-    parser.add_argument("--require-more-revision", type=int, default=0, help="require more revision in reasoner (default : 0)")
-    dta_map = defaultdict(None)
-    dta_map.update({"MNIST": get_mnist_add})
-    dta_map.update({"KMNIST": get_kmnist_add})
-    dta_map.update({"CIFAR": get_cifar_add})
-    dta_map.update({"SVHN": get_svhn_add})
-
+    parser.add_argument("--require-more-revision", type=int, default=10, help="require more revision in reasoner (default : 10)")
     args = parser.parse_args()
 
+    dta_map = {"MNIST": get_mnist_add, "KMNIST": get_kmnist_add, "CIFAR": get_cifar_add, "SVHN": get_svhn_add}
     # Build logger
     print_log("Abductive Learning on the MNIST Addition example.", logger="current")
 
@@ -103,7 +104,7 @@ def main():
     )
 
     # Build ABLModel
-    model = A3BLModel(base_model)
+    model = MODEL[args.method](base_model)
 
     # -- Building the Reasoning Part --------------------
     print_log("Building the Reasoning Part.", logger="current")
@@ -111,9 +112,9 @@ def main():
     # Build knowledge base
 
     kb = AddGroundKB(GKB_len_list=[args.digit_size * 2], kb_file_path=f"{_ROOT}/kb_cache/addition_{args.digit_size}_kb")
-    breakpoint()
+
     # Create reasoner
-    reasoner = A3BLReasoner(kb)
+    reasoner = REASONER[args.method](kb)
 
     # -- Building Evaluation Metrics --------------------
     print_log("Building Evaluation Metrics.", logger="current")
@@ -124,7 +125,7 @@ def main():
 
     # -- Bridging Learning and Reasoning ----------------
     print_log("Bridge Learning and Reasoning.", logger="current")
-    bridge = A3BLBridge(model, reasoner, metric_list)
+    bridge = BRIDGE[args.method](model, reasoner, metric_list)
 
     # Retrieve the directory of the Log file and define the directory for saving the model weights.
     log_dir = ABLLogger.get_current_instance().log_dir
