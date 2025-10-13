@@ -155,6 +155,7 @@ class A3BLBridge(SimpleBridge):  # TODO
                 self.predict(train_examples_batch)
                 self.idx_to_pseudo_label(train_examples_batch)
                 self.abduce_pseudo_label(train_examples_batch)
+                self.filter_pseudo_label(train_examples_batch)
                 self.pseudo_label_to_idx(train_examples_batch)
                 self.model.train(train_examples_batch)
 

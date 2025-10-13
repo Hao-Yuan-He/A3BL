@@ -15,6 +15,7 @@ from ablkit.reasoning import (
     A3BLReasoner,
     CachedKB,
 )
+from collections import defaultdict
 from ablkit.utils import ABLLogger, print_log
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from datasets import (
     get_kmnist_add,
     get_svhn_add,
 )
-from models.nn import LeNet5
+from models.nn import LeNet5, ResNet50
 
 _ROOT = Path(__file__).parent
 
@@ -69,16 +70,17 @@ def main():
     parser.add_argument("--label-smoothing", type=float, default=0.2, help="label smoothing in cross entropy loss (default : 0.2)")
     parser.add_argument("--lr", type=float, default=3e-4, help="base model learning rate (default : 0.0003)")
     parser.add_argument("--alpha", type=float, default=0.9, help="alpha in RMSprop (default : 0.9)")
-    parser.add_argument("--batch-size", type=int, default=32, help="base model batch size (default : 32)")
+    parser.add_argument("--batch-size", type=int, default=64, help="base model batch size (default : 32)")
     parser.add_argument("--loops", type=int, default=2, help="number of loop iterations (default : 2)")
-    parser.add_argument("--segment_size", type=int, default=0.01, help="segment size (default : 0.01)")
+    parser.add_argument("--segment_size", type=int, default=2048, help="segment size (default : 0.01)")
     parser.add_argument("--save_interval", type=int, default=1, help="save interval (default : 1)")
     parser.add_argument("--max-revision", type=int, default=-1, help="maximum revision in reasoner (default : -1)")
-    parser.add_argument("--require-more-revision", type=int, default=10, help="require more revision in reasoner (default : 10)")
+    parser.add_argument("--require-more-revision", type=int, default=2, help="require more revision in reasoner (default : 10)")
     kb_type = parser.add_mutually_exclusive_group()
     kb_type.add_argument("--prolog", action="store_true", default=False, help="use PrologKB (default: False)")
     kb_type.add_argument("--ground", action="store_true", default=False, help="use GroundKB (default: False)")
-
+    parser.add_argument("--temp", type=float, default=0.2)
+    parser.add_argument("--topk", type=int, default=32, help="choose only top k candidates, k=-1 means use all of them.")
     args = parser.parse_args()
 
     dta_map = {"MNIST": get_mnist_add, "KMNIST": get_kmnist_add, "CIFAR": get_cifar_add, "SVHN": get_svhn_add}
@@ -99,7 +101,13 @@ def main():
     print_log("Building the Learning Part.", logger="current")
 
     # Build necessary components for BasicNN
-    cls = LeNet5(num_classes=10)
+    cls_map = defaultdict(lambda: LeNet5(num_classes=10))
+    cls_map.update(
+        {"MNIST": LeNet5(num_classes=10), "KMNIST": LeNet5(num_classes=10), "CIFAR": ResNet50(num_classes=10), "SVHN": ResNet50(num_classes=10)}
+    )
+
+    cls = cls_map[args.dataset]
+
     loss_fn = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = RMSprop(cls.parameters(), lr=args.lr, alpha=args.alpha)
     use_cuda = not args.no_cuda and torch.cuda.is_available()
@@ -109,7 +117,7 @@ def main():
         max_lr=args.lr,
         pct_start=0.15,
         epochs=args.loops,
-        steps_per_epoch=int(1 / args.segment_size),
+        steps_per_epoch=int(max(1 / args.segment_size, args.segment_size)),
     )
 
     # Build BasicNN
@@ -138,7 +146,13 @@ def main():
         kb = AddKB()
 
     # Create reasoner
-    reasoner = REASONER[args.method](kb, max_revision=args.max_revision, require_more_revision=args.require_more_revision)
+
+    if args.method == "a3bl":
+        reasoner = A3BLReasoner(
+            kb, max_revision=args.max_revision, require_more_revision=args.require_more_revision, topK=args.topk, temperature=args.temp
+        )
+    else:
+        reasoner = Reasoner(kb, max_revision=args.max_revision, require_more_revision=args.require_more_revision)
 
     # -- Building Evaluation Metrics --------------------
     print_log("Building Evaluation Metrics.", logger="current")

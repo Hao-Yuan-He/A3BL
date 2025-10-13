@@ -11,5 +11,5 @@ examples/**/*.jpg
 .idea/
 build/
 .history
-**kb_cache/**
-
+**/kb_cache/**
+*.npz

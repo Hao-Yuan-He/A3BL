@@ -62,6 +62,13 @@ def main():
     parser.add_argument("--save_interval", type=int, default=1, help="save interval (default : 1)")
     parser.add_argument("--max-revision", type=int, default=-1, help="maximum revision in reasoner (default : -1)")
     parser.add_argument("--require-more-revision", type=int, default=10, help="require more revision in reasoner (default : 10)")
+    parser.add_argument("--temp", type=float, default=0.2)
+    parser.add_argument(
+        "--topk",
+        type=int,
+        default=32,
+        help="choose only top k candidates, k=-1 means use all of them."
+    )
     args = parser.parse_args()
 
     dta_map = {"MNIST": get_mnist_add, "KMNIST": get_kmnist_add, "CIFAR": get_cifar_add, "SVHN": get_svhn_add}

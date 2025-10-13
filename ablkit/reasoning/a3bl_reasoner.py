@@ -17,22 +17,12 @@ from ..data.structures import ListData
 from .reasoner import Reasoner
 
 
-def confidence_dist(
-    pred_probs: np.ndarray, candidate_idxs: List[List[Any]], temp: float = 1.0
-) -> np.ndarray:
-    """
-    Compute the confidence of the candidates based on the probs list (given by learning model).
-
-    pred_probs: (symbol_num, classes)
-
-    """
-
-    def f(x, prob):
-        return prob[x]
-
-    candidate_probs = np.array(
-        [np.sum(list(map(f, candidate, pred_probs))) / temp for candidate in candidate_idxs]
-    )
+def confidence_dist(pred_probs: np.ndarray, candidate_idxs: List[List[Any]], temp: float = 1.0) -> np.ndarray:
+    candidates_array = np.array(candidate_idxs)
+    _, symbol_num = candidates_array.shape
+    row_indices = np.arange(symbol_num)[:, np.newaxis]
+    selected_probs = pred_probs[row_indices, candidates_array.T]
+    candidate_probs = np.sum(selected_probs, axis=0) / temp
     return softmax(candidate_probs)
 
 
@@ -81,29 +71,30 @@ class A3BLReasoner(Reasoner):  # TODO
         kb,
         dist_func="confidence",
         idx_to_label=None,
-        max_revision: Union[int, float] = -1, # NOT USED, JUST FOR COMPATITY OF OLD CODE
+        max_revision: Union[int, float] = -1,
         require_more_revision: int = 0,
         use_zoopt: bool = False,
-        topK: int = -1,
-        temperature: float = 1.0,
+        topK: int = 16,
+        temperature: float = 0.2,
+        multi_label: bool = False,
     ):
-        super().__init__(kb, dist_func, idx_to_label)
+        super().__init__(kb, dist_func, idx_to_label, max_revision, require_more_revision, use_zoopt)
         self.topK = topK
         self.temperature = temperature
         self.class_num = len(self.kb.pseudo_label_list)
+        self.multi_label = multi_label
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def _candidates_idxs(self, candidates: List[List[Any]]):
         return [[self.label_to_idx[x] for x in c] for c in candidates]
 
-    def _topk(
-        self, candidates: List[Any], candidate_probs: np.ndarray, K: int = -1
-    ) -> Tuple[List[List[Any]], List[Any]]:
+    def _topk(self, candidates: List[Any], candidate_probs: np.ndarray, K: int = -1) -> Tuple[List[List[Any]], List[Any]]:
         """
         Performs a top-k selection from the candidate_set based on candidate_probs.
         If `K` is set to -1, all candidates are chosen.
         Returns a tuple containing the selected candidates and their corresponding probabilities.
         """
-        
+
         if K == -1 or len(candidates) <= K:
             return candidates, candidate_probs
 
@@ -118,17 +109,30 @@ class A3BLReasoner(Reasoner):  # TODO
                     heapq.heappush(heap, (prob, candidate))
 
         # Extract top-k elements from the heap and reverse them to get the highest probabilities first
-        topk_probs, topk_candidates = zip(*heap) 
+        topk_probs, topk_candidates = zip(*heap)
         return list(topk_candidates), list(topk_probs)
+
+    def multi_label_aggregate(self, candidates: List[List[int]], candidate_probs: List[float]):
+        """
+        An multi-label version of A3BL.
+        """
+        with torch.no_grad():
+            symbol_num = len(candidates[0])
+            aggregate_label = torch.zeros(size=(symbol_num, 1))
+            for candidate, prob in zip(candidates, candidate_probs):
+                for i, item in enumerate(candidate):
+                    if item == 1:
+                        aggregate_label[i] += prob
+        return list(aggregate_label.unbind(1))
 
     def aggregate(self, candidates: List[List[int]], candidate_probs: List[float]):
         with torch.no_grad():
-            symbol_num = len(candidates[0])
-            aggregate_label = torch.zeros(size=(symbol_num, self.class_num))
-            for candidate, prob in zip(candidates, candidate_probs):
-                for i, item in enumerate(candidate):
-                    aggregate_label[i][item] += prob
-        return list(aggregate_label.unbind(0))
+            candidates_tensor = torch.tensor(candidates, device=self.device, dtype=torch.long)
+            probs_tensor = torch.tensor(candidate_probs, device=self.device, dtype=torch.float32)
+            one_hot = F.one_hot(candidates_tensor, num_classes=self.class_num).float()  # [N, M, C]
+            weighted_one_hot = one_hot * probs_tensor.unsqueeze(-1).unsqueeze(-1)  # [N, M, C]
+            aggregate_label = weighted_one_hot.sum(dim=0)  # [M, C]
+        return [tensor.cpu() for tensor in aggregate_label.unbind(0)]
 
     def abduce(self, data_example: ListData) -> List[Any]:
         """
@@ -141,31 +145,38 @@ class A3BLReasoner(Reasoner):  # TODO
 
         Returns
         -------
-        
+
         List[Any]
             A revised soft label which is aggregated from valid candidates.
-        
+
         List[Any]
             A revised pseudo-labels of the example through abductive reasoning, which is compatible
             with the knowledge base.
-            
-        
+
+
         """
         max_revision_num = data_example.elements_num("pred_pseudo_label")
-
+        max_revision_num = self._get_max_revision_num(self.max_revision, max_revision_num)
         candidates, _ = self.kb.abduce_candidates(
             pseudo_label=data_example.pred_pseudo_label,
             y=data_example.Y,
             x=data_example.X,
             max_revision_num=max_revision_num,
-            require_more_revision=max_revision_num,
+            require_more_revision=self.require_more_revision,
         )
+
+        if len(candidates) == 0:
+            return [], []
 
         candidate_probs = confidence_dist(data_example.pred_prob, self._candidates_idxs(candidates), self.temperature)
         topk_candidates, topk_candidates_probs = self._topk(candidates, candidate_probs, self.topK)
-        aggregated_labels = self.aggregate(topk_candidates, topk_candidates_probs)
+        aggregated_labels = (
+            self.aggregate(topk_candidates, topk_candidates_probs)
+            if not self.multi_label
+            else self.multi_label_aggregate(topk_candidates, topk_candidates_probs)
+        )
         return aggregated_labels, topk_candidates[0]
-    
+
     def batch_abduce(self, data_examples: ListData) -> List[List[Any]]:
         """
         Perform abductive reasoning on the given prediction data examples.

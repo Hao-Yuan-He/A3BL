@@ -51,10 +51,11 @@ class CachedKB(KBBase):
         if self._num_args == 2:
             raise NotImplementedError("GroundKB only supports 1-argument logic_forward, but got " + f"{self._num_args}-argument logic_forward")
 
+        self.GKB_len_list = GKB_len_list
+
         if kb_file_path and os.path.exists(kb_file_path):
             self.load_kb(kb_file_path)
         else:
-            self.GKB_len_list = GKB_len_list
             self.GKB = {}
             X, Y = self._get_GKB()
             for x, y in zip(X, Y):
@@ -130,16 +131,10 @@ class CachedKB(KBBase):
         if not self.GKB or len(pseudo_label) not in self.GKB_len_list:
             return [], []
 
-        all_candidates, all_reasoning_results = self._find_candidate_GKB(pseudo_label, y)
-        if len(all_candidates) == 0:
+        candidates, reasoning_results = self._find_candidate_GKB(pseudo_label, y)
+        if len(candidates) == 0:
             return [], []
 
-        cost_list = hamming_dist(pseudo_label, all_candidates)
-        min_revision_num = np.min(cost_list)
-        revision_num = min(max_revision_num, min_revision_num + require_more_revision)
-        idxs = np.where(cost_list <= revision_num)[0]
-        candidates = [all_candidates[idx] for idx in idxs]
-        reasoning_results = [all_reasoning_results[idx] for idx in idxs]
         return candidates, reasoning_results
 
     def _find_candidate_GKB(self, pseudo_label: List[Any], y: Any) -> List[List[Any]]:

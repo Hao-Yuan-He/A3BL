@@ -2,18 +2,19 @@ import argparse
 import os.path as osp
 import numpy as np
 import torch
+import torch.nn as nn
 from torch import optim
 
 from ablkit.data.evaluation import SymbolAccuracy
-from ablkit.reasoning import Reasoner
+from ablkit.reasoning import Reasoner, A3BLReasoner
 from ablkit.utils import ABLLogger, print_log
 
 from models.nn import ConceptNet
 from models.bdd_nn import BDDNN
-from models.bdd_model import BDDABLModel
+from models.bdd_model import BDDA3BLModel, BDDABLModel
 from reasoning.bddkb import BDDKB
 from dataset.data_util import get_dataset
-from bridge import BDDBridge
+from bridge import BDDA3BLBridge, BDDBridge
 from metric import BDDReasoningMetric
 
 
@@ -28,37 +29,16 @@ def multi_label_confidence_dist(data_example, candidates, candidates_idxs, reaso
 
 def get_args():
     parser = argparse.ArgumentParser(description="BDD-OIA example")
-    parser.add_argument(
-        "--no-cuda", action="store_true", default=False, help="disables CUDA training"
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=1,
-        help="number of epochs in each learning loop iteration (default : 1)",
-    )
-    parser.add_argument(
-        "--lr", type=float, default=2e-3, help="base model learning rate (default : 0.002)"
-    )
-    parser.add_argument(
-        "--batch-size", type=int, default=32, help="base model batch size (default : 32)"
-    )
-    parser.add_argument(
-        "--loops", type=int, default=2, help="number of loop iterations (default : 2)"
-    )
-    parser.add_argument(
-        "--segment_size", type=int, default=0.01, help="segment size (default : 0.01)"
-    )
+    parser.add_argument("--a3bl", action="store_true", default=False, help="Using A3BL instead of naive ABL")
+    parser.add_argument("--no-cuda", action="store_true", default=False, help="disables CUDA training")
+    parser.add_argument("--epochs", type=int, default=1, help="number of epochs in each learning loop iteration (default : 1)")
+    parser.add_argument("--lr", type=float, default=2e-3, help="base model learning rate (default : 0.002)")
+    parser.add_argument("--batch-size", type=int, default=32, help="base model batch size (default : 32)")
+    parser.add_argument("--loops", type=int, default=2, help="number of loop iterations (default : 2)")
+    parser.add_argument("--segment_size", type=int, default=0.01, help="segment size (default : 0.01)")
     parser.add_argument("--save_interval", type=int, default=1, help="save interval (default : 1)")
-    parser.add_argument(
-        "--max-revision", type=int, default=3, help="maximum revision in reasoner (default : 3)"
-    )
-    parser.add_argument(
-        "--require-more-revision",
-        type=int,
-        default=3,
-        help="require more revision in reasoner (default : 3)",
-    )
+    parser.add_argument("--max-revision", type=int, default=3, help="maximum revision in reasoner (default : 3)")
+    parser.add_argument("--require-more-revision", type=int, default=3, help="require more revision in reasoner (default : 3)")
 
     args = parser.parse_args()
     return args
@@ -67,9 +47,13 @@ def get_args():
 def main():
     args = get_args()
 
+
     # Build logger
     print_log("Abductive Learning on the BDD-OIA example.", logger="current")
 
+    if args.a3bl: 
+        print_log("Using A3BL.")
+        
     # -- Working with Data ------------------------------
     print_log("Working with Data.", logger="current")
     train_data = get_dataset(fname="train.npz", get_pseudo_label=True)
@@ -105,7 +89,7 @@ def main():
     )
 
     # Build ABLModel
-    model = BDDABLModel(base_model)
+    model = BDDA3BLModel(base_model) if args.a3bl else BDDABLModel(base_model)
 
     # -- Building the Reasoning Part --------------------
     print_log("Building the Reasoning Part.", logger="current")
@@ -114,11 +98,22 @@ def main():
     kb = BDDKB()
 
     # Create reasoner
-    reasoner = Reasoner(
-        kb,
-        dist_func=multi_label_confidence_dist,
-        max_revision=args.max_revision,
-        require_more_revision=args.require_more_revision,
+    reasoner = (
+        A3BLReasoner(
+            kb,
+            dist_func=multi_label_confidence_dist,
+            max_revision=args.max_revision,
+            require_more_revision=args.require_more_revision,
+            topK=1,
+            multi_label=True,
+        )
+        if args.a3bl
+        else Reasoner(
+            kb,
+            dist_func=multi_label_confidence_dist,
+            max_revision=args.max_revision,
+            require_more_revision=args.require_more_revision,
+        )
     )
 
     # -- Building Evaluation Metrics --------------------
@@ -127,7 +122,7 @@ def main():
 
     # -- Bridging Learning and Reasoning ----------------
     print_log("Bridge Learning and Reasoning.", logger="current")
-    bridge = BDDBridge(model, reasoner, metric_list)
+    bridge = BDDA3BLBridge(model, reasoner, metric_list) if args.a3bl else BDDBridge(model, reasoner, metric_list)
 
     # Retrieve the directory of the Log file and define the directory for saving the model weights.
     log_dir = ABLLogger.get_current_instance().log_dir
