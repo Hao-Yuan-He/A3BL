@@ -13,3 +13,5 @@ build/
 .history
 **/kb_cache/**
 *.npz
+**sweep.yaml
+**/wandb/**

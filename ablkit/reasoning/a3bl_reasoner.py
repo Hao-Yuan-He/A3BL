@@ -26,6 +26,12 @@ def confidence_dist(pred_probs: np.ndarray, candidate_idxs: List[List[Any]], tem
     return softmax(candidate_probs)
 
 
+def confidence_dist_multi_label(pred_probs: np.ndarray, candidate_idxs: List[List[Any]], temp: float = 1.0) -> np.ndarray:
+    candidate_probs = pred_probs @ np.array(candidate_idxs).T / temp
+    return softmax(candidate_probs.squeeze(axis=0))
+
+
+
 class A3BLReasoner(Reasoner):  # TODO
     """
     Reasoner for minimizing the inconsistency between the knowledge base and learning models.
@@ -167,8 +173,10 @@ class A3BLReasoner(Reasoner):  # TODO
 
         if len(candidates) == 0:
             return [], []
+        
+        confidence_dist_cal = confidence_dist if not self.multi_label else confidence_dist_multi_label
 
-        candidate_probs = confidence_dist(data_example.pred_prob, self._candidates_idxs(candidates), self.temperature)
+        candidate_probs = confidence_dist_cal(data_example.pred_prob, self._candidates_idxs(candidates), self.temperature)
         topk_candidates, topk_candidates_probs = self._topk(candidates, candidate_probs, self.topK)
         aggregated_labels = (
             self.aggregate(topk_candidates, topk_candidates_probs)

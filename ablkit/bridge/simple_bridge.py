@@ -9,6 +9,7 @@ from typing import Any, List, Optional, Tuple, Union
 
 from numpy import ndarray
 
+import wandb
 from ..data.evaluation import BaseMetric
 from ..data.structures import ListData
 from ..learning import ABLModel
@@ -308,7 +309,7 @@ class SimpleBridge(BaseBridge):
                     save_path=osp.join(save_dir, f"model_checkpoint_loop_{loop + 1}.pth")
                 )
 
-    def _valid(self, data_examples: ListData) -> None:
+    def _valid(self, data_examples: ListData, tag="") -> None:
         """
         Internal method for validating the model with given data examples.
 
@@ -329,6 +330,9 @@ class SimpleBridge(BaseBridge):
         msg = "Evaluation ended, "
         for k, v in res.items():
             msg += k + f": {v:.3f} "
+            
+        wandb.log({f"{k}/{tag}": v for k, v in res.items()})
+        
         print_log(msg, logger="current")
 
     def valid(
@@ -349,7 +353,7 @@ class SimpleBridge(BaseBridge):
             ``self.metric_list``.
         """
         val_data_examples = self.data_preprocess("val", val_data)
-        self._valid(val_data_examples)
+        self._valid(val_data_examples, 'val')
 
     def test(
         self,
@@ -370,4 +374,4 @@ class SimpleBridge(BaseBridge):
         """
         print_log("Test start:", logger="current")
         test_data_examples = self.data_preprocess("test", test_data)
-        self._valid(test_data_examples)
+        self._valid(test_data_examples, 'test')

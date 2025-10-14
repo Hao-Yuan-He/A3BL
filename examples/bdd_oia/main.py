@@ -17,7 +17,23 @@ from dataset.data_util import get_dataset
 from bridge import BDDA3BLBridge, BDDBridge
 from metric import BDDReasoningMetric
 
+import wandb 
 
+def seed_everything(seed: int = 0):
+    import random
+    import os
+    import numpy as np
+    import torch
+
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+    
+    
 def multi_label_confidence_dist(data_example, candidates, candidates_idxs, reasoning_results):
     pred_prob = data_example.pred_prob.T  # nc x 1
     pred_prob = np.concatenate([1 - pred_prob, pred_prob], axis=1)  # nc x 2
@@ -29,7 +45,8 @@ def multi_label_confidence_dist(data_example, candidates, candidates_idxs, reaso
 
 def get_args():
     parser = argparse.ArgumentParser(description="BDD-OIA example")
-    parser.add_argument("--a3bl", action="store_true", default=False, help="Using A3BL instead of naive ABL")
+    parser.add_argument("--method", type=str, default="abl", help="abl or a3bl")
+    parser.add_argument("--seed", type=int, default=0, help="seed")
     parser.add_argument("--no-cuda", action="store_true", default=False, help="disables CUDA training")
     parser.add_argument("--epochs", type=int, default=1, help="number of epochs in each learning loop iteration (default : 1)")
     parser.add_argument("--lr", type=float, default=2e-3, help="base model learning rate (default : 0.002)")
@@ -47,11 +64,15 @@ def get_args():
 def main():
     args = get_args()
 
+    wandb.init(project="BDD-OIA")
+    seed_everything(args.seed)
 
     # Build logger
     print_log("Abductive Learning on the BDD-OIA example.", logger="current")
 
-    if args.a3bl: 
+    use_a3bl = args.method == 'a3bl' 
+    
+    if use_a3bl: 
         print_log("Using A3BL.")
         
     # -- Working with Data ------------------------------
@@ -89,7 +110,7 @@ def main():
     )
 
     # Build ABLModel
-    model = BDDA3BLModel(base_model) if args.a3bl else BDDABLModel(base_model)
+    model = BDDA3BLModel(base_model) if use_a3bl else BDDABLModel(base_model)
 
     # -- Building the Reasoning Part --------------------
     print_log("Building the Reasoning Part.", logger="current")
@@ -107,7 +128,7 @@ def main():
             topK=1,
             multi_label=True,
         )
-        if args.a3bl
+        if use_a3bl
         else Reasoner(
             kb,
             dist_func=multi_label_confidence_dist,
@@ -122,7 +143,7 @@ def main():
 
     # -- Bridging Learning and Reasoning ----------------
     print_log("Bridge Learning and Reasoning.", logger="current")
-    bridge = BDDA3BLBridge(model, reasoner, metric_list) if args.a3bl else BDDBridge(model, reasoner, metric_list)
+    bridge = BDDA3BLBridge(model, reasoner, metric_list) if use_a3bl else BDDBridge(model, reasoner, metric_list)
 
     # Retrieve the directory of the Log file and define the directory for saving the model weights.
     log_dir = ABLLogger.get_current_instance().log_dir

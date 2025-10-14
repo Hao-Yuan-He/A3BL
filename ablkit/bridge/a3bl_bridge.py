@@ -7,6 +7,7 @@ Copyright (c) 2025 LAMDA.  All rights reserved.
 import os.path as osp
 from typing import Any, List, Optional, Tuple, Union
 
+import wandb
 
 from ..data.evaluation import BaseMetric
 from ..data.structures import ListData
